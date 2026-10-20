@@ -1,0 +1,3 @@
+services:
+  web:
+    image: eta-heiz-kontroller:switch-20261017

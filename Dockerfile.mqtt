@@ -1,0 +1,13 @@
+# MQTT (2026-10-17): Zeitschaltuhr-Stand plus paho-mqtt, Brücke, MQTT-Seite und Migration 0005 (Point.mqtt).
+FROM eta-heiz-kontroller:schedule-20261017
+USER root
+RUN pip install --no-cache-dir paho-mqtt==2.1.0
+USER eta
+COPY --chown=eta:eta requirements.txt /app/requirements.txt
+COPY --chown=eta:eta config/settings.py config/urls.py /app/config/
+COPY --chown=eta:eta heating/models.py heating/views.py heating/mqtt.py heating/tests.py /app/heating/
+COPY --chown=eta:eta heating/migrations/0005_point_mqtt.py /app/heating/migrations/0005_point_mqtt.py
+COPY --chown=eta:eta heating/management/commands/mqtt_bridge.py heating/management/commands/mqtt_doc.py heating/management/commands/bootstrap.py /app/heating/management/commands/
+COPY --chown=eta:eta templates/ /app/templates/
+COPY --chown=eta:eta static/ /app/static/
+COPY --chown=eta:eta static/ /app/staticfiles/

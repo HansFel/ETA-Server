@@ -1,0 +1,36 @@
+# MQTT-Test zur Rechte-Instanz (Port 8099) mit EMQX aus nas-emqx/ (lokal, nur 127.0.0.1).
+# Vorher einmalig: siehe nas-emqx/README.md, Abschnitt "Lokaler Test".
+# Start: docker compose -p eta-rechte -f compose.rechte.yaml -f compose.mqtt-rechte.yaml up -d --no-deps web mqtt mqtt-bridge
+services:
+  web:
+    image: eta-heiz-kontroller:mqtt-20261017
+  mqtt:
+    image: emqx/emqx:6.3.2
+    restart: unless-stopped
+    network_mode: bridge
+    env_file: nas-emqx/.env
+    environment:
+      EMQX_NODE__NAME: emqx@127.0.0.1
+    ports: ["127.0.0.1:18830:1883", "127.0.0.1:8883:8883", "127.0.0.1:18083:18083"]
+    volumes:
+      - ./nas-emqx/etc/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./nas-emqx/etc/acl.conf:/opt/emqx/etc/acl.conf:ro
+      - ./nas-emqx/certs:/opt/emqx/etc/nas-certs:ro
+      - ./nas-emqx/secrets:/opt/emqx/etc/secrets:ro
+      - eta-rechte-emqx:/opt/emqx/data
+  mqtt-bridge:
+    image: eta-heiz-kontroller:mqtt-20261017
+    env_file: .env.rechte
+    environment:
+      MQTT_HOST: host.docker.internal
+      MQTT_PORT: "18830"
+      MQTT_PASSWORD_FILE: /run/secrets/mqtt-app-password
+    command: python manage.py mqtt_bridge
+    volumes:
+      - eta-rechte-data:/data
+      - ./.secrets:/run/secrets:ro
+    network_mode: bridge
+    restart: unless-stopped
+    depends_on: [mqtt]
+volumes:
+  eta-rechte-emqx:

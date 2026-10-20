@@ -1,0 +1,4 @@
+.pio/
+include/provisioning.h
+private/
+__pycache__/

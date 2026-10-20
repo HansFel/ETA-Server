@@ -1,0 +1,16 @@
+# ETA-App an den EMQX-Broker der NAS anbinden (Broker-Stack: nas-emqx/, Docker-Netz "mqtt").
+# Zusätzlich zu compose.yaml und compose.deployed.yaml verwenden, gleicher Projektname (-p eta).
+# In .env:  MQTT_HOST=emqx  und  MQTT_PASSWORD_FILE=/run/secrets/mqtt-app-password
+services:
+  mqtt-bridge:
+    image: ${ETA_IMAGE:?ETA_IMAGE auf die geprüfte Image-ID setzen}
+    env_file: .env
+    command: python manage.py mqtt_bridge
+    volumes:
+      - eta-data:/data
+      - ./.secrets:/run/secrets:ro
+    networks: [mqtt]
+    restart: unless-stopped
+networks:
+  mqtt:
+    external: true

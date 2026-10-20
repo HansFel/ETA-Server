@@ -1,0 +1,42 @@
+# EMQX-Broker auf der NAS. Ordner: /volume1/docker/instanzen/emqx
+# Start:  cd /volume1/docker/instanzen/emqx && docker compose up -d
+# Dashboard (nur Heimnetz): http://192.168.178.32:18083  Benutzer admin, Passwort siehe .env (beim ersten Login ändern)
+name: emqx
+services:
+  emqx:
+    image: emqx/emqx:6.3.2
+    container_name: emqx
+    restart: unless-stopped
+    env_file: .env          # EMQX_NODE_COOKIE, EMQX_DASHBOARD__DEFAULT_PASSWORD
+    environment:
+      TZ: Europe/Vienna
+      # Fester Knotenname: sonst nimmt EMQX die Container-IP, und nach einem IP-Wechsel fehlen Konten und Regeln.
+      EMQX_NODE__NAME: emqx@127.0.0.1
+    ports:
+      - "192.168.178.32:1883:1883"     # Heimnetz, mit Passwort; im Router NICHT freigeben
+      - "8883:8883"                    # TLS; im Router freigegeben
+      - "192.168.178.32:18083:18083"   # Dashboard nur im Heimnetz; im Router NICHT freigeben
+    volumes:
+      - ./etc/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./etc/acl.conf:/opt/emqx/etc/acl.conf:ro
+      - ./certs:/opt/emqx/etc/nas-certs:ro
+      - ./secrets:/opt/emqx/etc/secrets:ro
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+    networks: [mqtt]
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+volumes:
+  emqx-data:
+  emqx-log:
+networks:
+  mqtt:
+    name: mqtt   # ETA-App tritt diesem Netz bei: MQTT_HOST=emqx
+    # Fester Bereich: der Docker-Standardpool der NAS ist voll; nicht im Heimnetz 192.168.178.0/24.
+    ipam:
+      config:
+        - subnet: 10.250.10.0/24

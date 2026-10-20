@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">PERSONEN & ZUGÄNGE</span>
+    <h1>Die richtigen Menschen.<br>Die passenden Rechte.</h1>
+    <p class="muted">Lege fest, was jede Person sehen und schalten darf. Ohne Eintrag hat eine Person für den Bereich keinen Zugriff.</p>
+  </div>
+</div>
+
+{% if invitation %}
+<div class="notice success">
+  <strong>Einladung erstellt · noch nicht versendet</strong>
+  <p>Einmaliger Link, 48 Stunden gültig:</p>
+  <input readonly value="{{ invitation }}" aria-label="Einladungslink">
+  <p>Der bestehende Zugang bleibt bis zur Einlösung unverändert.</p>
+</div>
+{% endif %}
+
+<details class="panel">
+  <summary>＋ Neue Person einladen</summary>
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <label>Benutzername<input name="username" required maxlength="150"></label>
+    <label>E-Mail (für Passwort-Wiederherstellung)<input name="email" type="email"></label>
+    <label>Vorlage
+      <select name="preset">
+        <option value="">Rechte unten einzeln festlegen</option>
+        {% for key,label in presets %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+      <small>Eine Vorlage ersetzt die Auswahl unten. Danach kannst du alles einzeln anpassen.</small>
+    </label>
+    {% for i,name in sections %}
+    <label>{{ name }}
+      <select name="grant-{{ i }}">
+        {% for key,label in levels %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endfor %}
+    <label>Wiesenegger Detailrecht (bei „Schalten“)
+      <select name="wiese-profile">
+        {% for key,label in wiese_profiles %}
+        <option value="{{ key }}" {% if key == 'switch_schedule' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <small>Nur wirksam, wenn Bereich Wiesenegger auf „Schalten“ steht.</small>
+    </label>
+    <div>
+      <label class="check"><input name="admin" type="checkbox"> Administrator (darf alles)</label>
+      <label class="check"><input name="mqtt" type="checkbox"> MQTT-Gerät (z. B. ESP32; Name = MQTT-Benutzer)</label>
+      <label class="check"><input name="active" type="checkbox" checked> Zugang aktiv</label>
+      <button>Person und Einladungslink erstellen</button>
+    </div>
+  </form>
+</details>
+
+<div class="people-grid">
+  {% for person in people %}
+  <section class="panel">
+    <div class="panel-title"><h2>{{ person.username }}</h2><span class="tag">{% if person.is_mqtt_flag %}MQTT-Gerät · {% endif %}{{ person.access_status }}</span></div>
+    <p class="muted">{{ person.email|default:'Keine E-Mail-Adresse hinterlegt' }}</p>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save">
+      <input type="hidden" name="user" value="{{ person.id }}">
+      <label>E-Mail (für Passwort-Wiederherstellung)<input name="email" type="email" value="{{ person.email }}" autocomplete="email"></label>
+      <label class="check"><input type="checkbox" name="admin" {% if person.is_admin_flag %}checked{% endif %}> Administrator (darf alles)</label>
+      <label class="check"><input type="checkbox" name="mqtt" {% if person.is_mqtt_flag %}checked{% endif %}> MQTT-Gerät (schaltet über MQTT mit diesen Rechten)</label>
+      {% for i,name,level in person.rows %}
+      <label>{{ name }}
+        <select name="grant-{{ i }}">
+          {% for key,label in levels %}
+          <option value="{{ key }}" {% if key == level %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endfor %}
+      <label>Wiesenegger Detailrecht (bei „Schalten“)
+        <select name="wiese-profile">
+          {% for key,label in wiese_profiles %}
+          <option value="{{ key }}" {% if key == person.wiese_profile %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <small>„Schalten“ schließt „Sehen“ ein. Administratoren dürfen unabhängig von dieser Auswahl alles. Änderungen wirken bei der nächsten Anfrage.</small>
+      <label class="check"><input type="checkbox" name="active" {% if person.is_active %}checked{% endif %}> Zugang aktiv</label>
+      <button class="secondary">E-Mail, Rechte und Status speichern</button>
+    </form>
+    <div class="button-row">
+      <form method="post">{% csrf_token %}<input type="hidden" name="user" value="{{ person.id }}"><input type="hidden" name="action" value="invite"><button class="text-button">Einladungslink erzeugen</button></form>
+      <form method="post">{% csrf_token %}<input type="hidden" name="user" value="{{ person.id }}"><input type="hidden" name="action" value="revoke"><button class="text-button">Offene Links widerrufen</button></form>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

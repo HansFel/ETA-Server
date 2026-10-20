@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">MQTT-SCHNITTSTELLE</span>
+    <h1>Schalten über MQTT.</h1>
+    <p class="muted">Topic und Payload für jeden Schaltpunkt. Geräte schalten über die App: gleiche Rechte, Wertebereich, Rücklesen und Protokoll wie im Web.</p>
+  </div>
+  <span class="status-pill {% if not state.enabled or not state.connected or state.stale %}warning{% endif %}">
+    {% if not state.at %}Brücke läuft nicht{% elif not state.enabled %}Brücke ohne MQTT_HOST{% elif state.stale %}Brücke ohne Lebenszeichen{% elif state.connected %}Brücke mit Broker verbunden{% else %}Broker nicht erreichbar{% endif %}
+  </span>
+</div>
+
+<section class="panel">
+  <h2>ESP32-Temperatursensoren</h2>
+  <p>Ordne jedem Gerät einen Bereich zu. Personen mit „Sehen“ oder „Schalten“ für diesen Bereich sehen die Temperaturen, den Verlauf und den CSV-Export in der Übersicht. Ohne Zuordnung werden keine neuen Sensorwerte aufgezeichnet.</p>
+  <p class="muted">Aufzeichnung im Abfrageintervall der App, auch ohne geöffneten Browser. Der Verlauf beginnt mit der Aktivierung. Veraltete und ungültige Messwerte werden nicht als aktuelle Temperaturen angezeigt.</p>
+  {% for sensor in sensor_devices %}
+  <form method="post" class="chart-toolbar">
+    {% csrf_token %}<input type="hidden" name="action" value="sensor-section"><input type="hidden" name="sensor-device" value="{{ sensor.name }}">
+    <label>{{ sensor.name }}<select name="section"><option value="">Keine Aufzeichnung / nur Administratoren</option>{% for key,label in sensor_sections %}<option value="{{ key }}" {% if sensor.section == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <button>Sensorbereich speichern</button>
+  </form>
+  {% empty %}<p class="muted">Noch kein aktives MQTT-Gerät angelegt.</p>{% endfor %}
+</section>
+
+<section class="panel">
+  <div class="mqtt-intro">
+    <div>
+      <h2>So wird geschaltet</h2>
+      <ul class="muted small-text">
+        <li>Payload als reiner Text, z. B. <code>Ein</code>, oder als JSON <code>{"command_id": "&lt;UUID&gt;", "value": "Ein"}</code>. Mit <code>command_id</code> wird eine doppelte Zustellung nicht zweimal geschaltet.</li>
+        <li>QoS 1, <strong>nicht</strong> retained. Gespeicherte (retained) Befehle werden abgewiesen.</li>
+        <li>Antwort auf <code>…/result</code> mit <code>status</code>: confirmed, different, uncertain oder rejected (mit Grund).</li>
+        <li>Aktueller Wert, gespeichert (retained), auf <code>…/state/&lt;punkt&gt;</code>. Bei <code>quality</code> ungleich <code>ok</code> ist der Wert leer.</li>
+        <li>Das Gerät braucht ein Konto mit Häkchen „MQTT-Gerät“ (Name = MQTT-Benutzer) und das Recht „Schalten“ für den Bereich. Zusätzlich muss der Punkt unten für MQTT freigegeben sein. Außerdem gilt die globale Freigabe auf der Steuerseite.</li>
+      </ul>
+    </div>
+    <form method="get" class="mqtt-device">
+      <label>Topics anzeigen für
+        <select name="device" data-autosubmit>
+          {% for d in devices %}<option value="{{ d }}" {% if d == device %}selected{% endif %}>{{ d }}</option>{% empty %}<option value="">&lt;geraet&gt; (noch kein MQTT-Gerät angelegt)</option>{% endfor %}
+        </select>
+      </label>
+      <button class="secondary small" data-js-hide>Anzeigen</button>
+      <a class="button secondary small" href="{% url 'mqtt_markdown' %}{% if devices %}?device={{ device|urlencode }}{% endif %}">Als Markdown herunterladen</a>
+    </form>
+  </div>
+</section>
+
+<details class="panel">
+  <summary>Alle Heizungsdaten (nur lesen): {{ data|length }} Datenpunkte auf <code>eta/state/&lt;punkt&gt;</code></summary>
+  <p class="muted small-text">Retained, nach jeder Abfrage aktualisiert. Lesen darf jedes MQTT-Konto, schreiben nur die App. Payload: JSON mit <code>value</code>, <code>text</code>, <code>unit</code>, <code>quality</code>, <code>at</code>; bei <code>quality</code> ungleich <code>ok</code> sind die Werte leer. Dazu <code>eta/status</code> (Abfragezustand) und <code>eta/errors</code> (Störungen der ETA).</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Bereich</th><th>Datenpunkt</th><th>Topic</th><th>Art</th><th>Aktuell</th></tr></thead>
+      <tbody>
+        {% for d in data %}<tr><td>{{ d.section }}</td><td>{{ d.label }}</td><td><code>{{ d.topic }}</code></td><td>{{ d.kind }}</td><td>{% if d.point.latest.quality == 'ok' %}{{ d.point.latest.text }} {{ d.unit }}{% else %}—{% endif %}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<form method="post">
+  {% csrf_token %}
+  {% if devices %}<input type="hidden" name="device" value="{{ device }}">{% endif %}
+  {% regroup docs by section as sections %}
+  {% for group in sections %}
+  <div class="block-heading"><h2>{{ group.grouper }}</h2><span>{{ group.list|length }} Schaltpunkte</span></div>
+  <div class="mqtt-list">
+    {% for d in group.list %}
+    <section class="panel mqtt-point{% if not d.usable %} off{% endif %}">
+      <div class="mqtt-point-head">
+        <div><strong>{{ d.label }}</strong> <code class="key">{{ d.key }}</code></div>
+        <label class="check"><input type="checkbox" name="mqtt" value="{{ d.key }}" {% if d.point.mqtt %}checked{% endif %}> Über MQTT schaltbar</label>
+      </div>
+      <dl class="mqtt-topics">
+        <dt>Befehl</dt><dd><code>{{ d.set_topic }}</code></dd>
+        <dt>Werte</dt><dd><span class="tag">{{ d.kind }}</span> {{ d.hint }}</dd>
+        {% if d.example_plain %}
+        <dt>Payload</dt><dd><code>{{ d.example_plain }}</code> oder <code>{{ d.example_json }}</code><br><small>Beispiel = aktueller Wert (Senden ändert nichts).{% if d.values|length > 1 %} Weitere Werte: {% for v in d.values %}{% if v != d.example_plain %}<code>{{ v }}</code> {% endif %}{% endfor %}{% endif %}</small></dd>
+        {% endif %}
+        <dt>Ergebnis</dt><dd><code>{{ d.result_topic }}</code></dd>
+        <dt>Zustand</dt><dd><code>{{ d.state_topic }}</code>{% if d.point.latest.text %} <small>aktuell: {{ d.point.latest.text }} {{ d.point.latest.unit }}</small>{% endif %}</dd>
+      </dl>
+      {% if d.point.confirm %}<p class="muted small-text">Im Web mit Rückfrage. Über MQTT gibt es keine Rückfrage, deshalb nur bewusst freigeben.</p>{% endif %}
+    </section>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <div class="schedule-footer"><span class="muted">Freigaben gelten sofort für alle MQTT-Geräte.</span><button>MQTT-Freigaben speichern</button></div>
+</form>
+{% endblock %}

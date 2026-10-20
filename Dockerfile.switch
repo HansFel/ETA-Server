@@ -1,0 +1,10 @@
+FROM eta-heiz-kontroller:rechte
+COPY --chown=eta:eta config/urls.py /app/config/urls.py
+COPY --chown=eta:eta heating/views.py /app/heating/views.py
+COPY --chown=eta:eta templates/control.html /app/templates/control.html
+COPY --chown=eta:eta static/app.css /app/static/app.css
+COPY --chown=eta:eta static/app.css /app/staticfiles/app.css
+
+COPY --chown=eta:eta templates/dashboard.html /app/templates/dashboard.html
+COPY --chown=eta:eta static/app.js /app/static/app.js
+COPY --chown=eta:eta static/app.js /app/staticfiles/app.js

@@ -1,0 +1,8 @@
+# Combine with the existing instance compose file; keeps its data volumes/env/ports.
+services:
+  init:
+    image: eta-heiz-kontroller:archive-20261015
+  web:
+    image: eta-heiz-kontroller:archive-20261015
+  worker:
+    image: eta-heiz-kontroller:archive-20261015

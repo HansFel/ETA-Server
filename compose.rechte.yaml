@@ -1,0 +1,41 @@
+# Zweite, getrennte Instanz zum Testen der Rechte pro Person (Port 8099, eigenes Datenvolumen, eigene Sicherungen).
+# Start:  docker compose -p eta-rechte -f compose.rechte.yaml up -d --build
+# Stopp:  docker compose -p eta-rechte -f compose.rechte.yaml down      (Daten bleiben; mit -v werden sie gelöscht)
+name: eta-rechte
+x-app: &app
+  image: eta-heiz-kontroller:rechte
+  env_file: .env.rechte
+  volumes:
+    - eta-rechte-data:/data
+    - ./backups-rechte:/backups
+    - ./.secrets:/run/secrets:ro
+  restart: unless-stopped
+  network_mode: bridge   # Docker-Adresspool war voll (viele Projekt-Netze); die Dienste brauchen kein eigenes Netz
+services:
+  init:
+    <<: *app
+    build: .
+    command: sh -c "python manage.py migrate --noinput && python manage.py bootstrap && python manage.py collectstatic --noinput"
+    restart: "no"
+  web:
+    <<: *app
+    ports: ["127.0.0.1:8099:8000"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  worker:
+    <<: *app
+    command: python manage.py worker
+    depends_on:
+      init: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "worker_health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+volumes:
+  eta-rechte-data:

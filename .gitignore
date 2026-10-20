@@ -19,3 +19,20 @@ __pycache__/
 *.py[cod]
 node_modules/
 .codex_tmp/
+
+# Local deployment, generated credentials and artifacts
+.secrets/
+data/
+backups*/
+artifacts/
+.vscode/
+_pre-rechte-*/
+staticfiles/
+.nas-deploy.lock/
+compose.deployed.yaml*
+firmware/eta-io/private/
+firmware/eta-io/.pio/
+firmware/eta-io/include/provisioning.h
+nas-emqx/secrets/
+nas-emqx/certs/
+nas-emqx/ca/

@@ -1,0 +1,217 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">BEWUSST BEDIENEN</span>
+    <h1>Deine Heizung steuern.</h1>
+    <p class="muted">Änderungen werden direkt gesendet und danach zurückgelesen. Bei wichtigen Punkten kommt eine kurze Rückfrage.</p>
+  </div>
+  <span class="status-pill {% if not control_enabled %}warning{% endif %}">
+    {% if control_enabled %}Steuerung freigegeben{% else %}Steuerung gesperrt{% endif %}
+  </span>
+</div>
+
+{% if is_admin %}
+<details class="panel">
+  <summary>Freigabe für echte Heizungsbefehle</summary>
+  <form method="post" action="{% url 'control_toggle' %}" class="inline-form">
+    {% csrf_token %}
+    <label>Freigabe
+      <select name="enabled">
+        <option value="0">Gesperrt</option>
+        <option value="1" {% if control_enabled %}selected{% endif %}>Echte Steuerung erlauben</option>
+      </select>
+    </label>
+    <label>Dein Passwort<input type="password" name="password" required autocomplete="current-password"></label>
+    <button>Freigabe speichern</button>
+  </form>
+  <p class="muted">Gilt für alle Personen. Wer was schalten darf, legst du unter „Personen & Zugänge“ fest.</p>
+
+  <form method="post" action="{% url 'control_wiesenegger_mode' %}" class="inline-form">
+    {% csrf_token %}
+    <label>Wiesenegger-Steuermodus
+      <select name="mode">
+        <option value="permanent" {% if wiese_mode == 'permanent' %}selected{% endif %}>Permanent erlaubt</option>
+        <option value="esp_release" {% if wiese_mode == 'esp_release' %}selected{% endif %}>Nur mit ESP32-Freigabe</option>
+      </select>
+    </label>
+    <label>Dein Passwort<input type="password" name="password" required autocomplete="current-password"></label>
+    <button>Modus speichern</button>
+  </form>
+  <p class="muted">
+    Aktueller ESP32-Status:
+    {% if wiese_release.enabled and wiese_release.fresh %}
+      Freigabe aktiv.
+    {% elif wiese_release.enabled %}
+      Freigabe veraltet.
+    {% else %}
+      Keine Freigabe.
+    {% endif %}
+  </p>
+</details>
+{% endif %}
+
+{% if wiese_limited_profile and not wiese_active %}
+<section class="panel">
+  <p class="muted">Wiesenegger-Steuerung ist derzeit gesperrt, weil keine aktive ESP32-Freigabe vorliegt.</p>
+</section>
+{% endif %}
+
+{% if wiese_schedule %}
+<div class="block-heading"><h2>Wiesenegger Zeitschaltuhr</h2><span>Heizzeiten der Woche</span></div>
+<section class="panel schedule" id="schedule">
+  <div class="schedule-head">
+    <div>
+      <p class="schedule-now" id="schedule-now">Heizzeiten pro Wochentag. Tag anklicken zum Bearbeiten.</p>
+      <p class="muted small-text">Bis zu drei Zeitfenster pro Tag im Viertelstundenraster. Außerhalb der Zeitfenster gilt die abgesenkte Temperatur. Ende 00:00 bedeutet Mitternacht.</p>
+    </div>
+    {% if wiese_time_state %}
+    <span class="status-pill {% if wiese_time_state.latest.text != 'Ein' %}warning{% endif %}">ETA meldet: Heizzeit {{ wiese_time_state.latest.text|default:'unbekannt' }}</span>
+    {% endif %}
+  </div>
+  <form method="post" action="{% url 'control_schedule' %}" id="schedule-form" novalidate>
+    {% csrf_token %}
+    <div class="tl-scale" aria-hidden="true"><span></span><span>0</span><span>3</span><span>6</span><span>9</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span></div>
+    {% for row in wiese_schedule %}
+    <details class="tl-day" data-day="{{ row.key }}">
+      <summary>
+        <span class="tl-name" title="{{ row.day }}">{{ row.short }}</span>
+        <span class="tl-bar" aria-hidden="true"></span>
+        <span class="tl-text">
+          {% for slot in row.slots %}{% if not slot.known %}<span>Fenster {{ slot.number }} unbekannt</span>{% elif slot.active %}<span>{{ slot.begin }}–{% if slot.end == '00:00' %}24:00{% else %}{{ slot.end }}{% endif %}</span>{% endif %}{% endfor %}
+        </span>
+      </summary>
+      <div class="tl-editor">
+        {% for slot in row.slots %}
+        <div class="tl-slot{% if not slot.active %} off{% endif %}" data-slot data-orig="{{ slot.orig }}">
+          {% if slot.known %}
+          <label class="check"><input type="checkbox" name="{{ slot.key }}-on" {% if slot.active %}checked{% endif %} {% if not slot.editable %}disabled{% endif %}> Zeitfenster {{ slot.number }}</label>
+          <label>von<input type="time" step="900" name="{{ slot.key }}-begin" value="{{ slot.begin }}" {% if not slot.editable %}disabled{% endif %}></label>
+          <label>bis<input type="time" step="900" name="{{ slot.key }}-end" value="{{ slot.end }}" {% if not slot.editable %}disabled{% endif %}></label>
+          {% if slot.editable %}<input type="hidden" name="{{ slot.key }}-orig" value="{{ slot.orig }}">{% endif %}
+          {% else %}
+          <p class="muted small-text">Zeitfenster {{ slot.number }}: Zustand unbekannt oder veraltet, bitte den nächsten Abruf abwarten.</p>
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% if row.outside %}
+        <div class="tl-outside">
+          {% if row.outside.known %}
+          <label>Temperatur außerhalb der Zeitfenster
+            <input type="number" step="0.5" {% if row.outside.minimum is not None %}min="{{ row.outside.minimum|stringformat:'s' }}" max="{{ row.outside.maximum|stringformat:'s' }}"{% endif %} name="{{ row.outside.key }}-value" value="{{ row.outside.latest.value|stringformat:'s' }}" {% if not row.outside.editable %}disabled{% endif %}>
+            <small>°C{% if row.outside.minimum is not None %} · erlaubt {{ row.outside.minimum.normalize }} bis {{ row.outside.maximum.normalize }}{% endif %}</small>
+          </label>
+          {% if row.outside.editable %}<input type="hidden" name="{{ row.outside.key }}-orig" value="{{ row.outside.latest.value|stringformat:'s' }}">{% endif %}
+          {% else %}
+          <p class="muted small-text">Temperatur außerhalb der Zeitfenster: unbekannt.</p>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% if wiese_schedule_editable %}
+        <div class="tl-actions" data-js hidden>
+          <span class="muted small-text">Schnellwahl:</span>
+          <button type="button" class="secondary small" data-preset="0-96">Ganztägig</button>
+          <button type="button" class="secondary small" data-preset="24-88">Tagsüber 6–22</button>
+          <button type="button" class="secondary small" data-preset="24-36,64-88">Morgens & Abends</button>
+          <button type="button" class="secondary small" data-preset="">Keine Heizzeit</button>
+          <label class="tl-copy">Diesen Tag kopieren nach
+            <select data-copy>
+              <option value="">Auswählen …</option>
+              <option value="mon,tue,wed,thu,fri">Mo–Fr</option>
+              <option value="sat,sun">Sa–So</option>
+              <option value="mon,tue,wed,thu,fri,sat,sun">alle Tage</option>
+            </select>
+          </label>
+        </div>
+        {% endif %}
+        <p class="tl-error error-text small-text" hidden></p>
+      </div>
+    </details>
+    {% endfor %}
+    {% if wiese_schedule_editable %}
+    <div class="schedule-footer">
+      <span id="schedule-changes" class="muted">Keine Änderungen</span>
+      <button type="reset" class="secondary">Verwerfen</button>
+      <button type="submit" id="schedule-save">Speichern</button>
+    </div>
+    {% elif not control_enabled %}
+    <p class="muted small-text">Bearbeiten ist möglich, sobald die Steuerung freigegeben ist.</p>
+    {% endif %}
+  </form>
+</section>
+{% endif %}
+
+{% for section, items in groups %}
+<div class="block-heading"><h2>{{ section }}</h2><span>{{ items|length }} schaltbar</span></div>
+<div class="control-grid">
+  {% for p in items %}
+  <section class="panel">
+    <span class="eyebrow">{{ p.label }}</span>
+    <div class="control-current">{{ p.latest.text|default:'Noch nicht verfügbar' }} <small>{{ p.latest.unit }}</small></div>
+    <p class="muted small-text">Letzter Abruf: {{ p.updated|date:'d.m.Y H:i:s'|default:'Noch keiner' }}</p>
+    <form method="post" action="{% url 'control_set' p.id %}">
+      {% csrf_token %}
+      {% if p.is_switch %}
+      <div class="switch-row">
+        <span>Aus</span>
+        <button type="submit" class="heating-switch" role="switch" aria-label="{{ p.label }}" aria-checked="{% if p.switch_on and p.switch_known %}true{% else %}false{% endif %}" name="value" value="{{ p.switch_target }}" {% if not control_enabled or not p.metadata.writable or not p.enabled or not p.switch_known or p.wiese_blocked %}disabled{% endif %}><span class="switch-knob"></span></button>
+        <span>Ein</span>
+      </div>
+      {% if not p.switch_known %}
+      <p class="muted small-text">Zustand unbekannt oder veraltet ? bitte aktuellen Abruf abwarten.</p>
+      {% endif %}
+      {% if p.wiese_blocked %}
+      <p class="muted small-text">Wird erst aktiv, wenn der ESP32 freigibt.</p>
+      {% endif %}
+      {% else %}
+      <label>Neuer Wert
+        {% if p.metadata.choices %}
+        <select name="value">
+          {% for choice in p.metadata.choices %}
+          <option value="{{ choice.raw }}" {% if choice.raw == p.latest.raw %}selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input name="value" type="number" step="0.1" value="{{ p.current_input|stringformat:'s' }}" required>
+        {% if p.minimum is not None %}<small>Erlaubter Bereich: {{ p.minimum }} bis {{ p.maximum }} {{ p.metadata.unit }}</small>{% endif %}
+        {% endif %}
+      </label>
+      <button class="wide secondary" {% if not control_enabled or not p.metadata.writable or p.wiese_blocked %}disabled{% endif %}>Jetzt senden</button>
+      {% if p.wiese_blocked %}
+      <p class="muted small-text">Wird erst aktiv, wenn der ESP32 freigibt.</p>
+      {% endif %}
+      {% endif %}
+    </form>
+    {% if is_admin %}
+    <form method="post" action="{% url 'control_confirm_setting' p.id %}" class="inline-form">
+      {% csrf_token %}
+      <label class="check"><input type="checkbox" name="confirm" {% if p.confirm %}checked{% endif %}> Rückfrage im Web</label>
+      <label class="check"><input type="checkbox" name="mqtt" {% if p.mqtt %}checked{% endif %}> Über MQTT schaltbar</label>
+      <button class="text-button">Speichern</button>
+    </form>
+    {% elif p.confirm %}
+    <p class="muted small-text">Vor dem Senden kommt eine kurze Rückfrage.</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% empty %}
+<section class="panel"><p class="muted">Noch keine steuerbaren Punkte eingerichtet.</p></section>
+{% endfor %}
+
+<section class="panel">
+  <h2>Befehlsprotokoll</h2>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Zeit</th><th>Person</th><th>Funktion</th><th>Status</th><th>Ergebnis</th></tr></thead>
+      <tbody>
+        {% for c in commands %}
+        <tr><td>{{ c.created|date:'d.m. H:i:s' }}</td><td>{{ c.user.username }}</td><td>{{ c.point.label }}</td><td>{{ c.status }}</td><td>{{ c.result|default:'—' }}</td></tr>
+        {% empty %}
+        <tr><td colspan="5">Noch keine Befehle gesendet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
