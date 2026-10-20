@@ -1,0 +1,21 @@
+# Private configuration and runtime data
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.log
+backups/
+uploads/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+node_modules/
+.codex_tmp/
